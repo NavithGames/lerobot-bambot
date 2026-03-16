@@ -1,0 +1,106 @@
+<!DOCTYPE html>
+<html>
+<head>
+<title>SO-101 Dataset Replay</title>
+<style>
+body { font-family: sans-serif; background: #1a1a2e; color: #eee; padding: 20px; }
+.container { max-width: 800px; margin: auto; }
+h1 { color: #00d4ff; }
+.joint-bar { display: flex; align-items: center; margin: 8px 0; }
+.joint-name { width: 140px; font-size: 14px; }
+.bar-bg { flex: 1; height: 20px; background: #333; border-radius: 4px; position: relative; }
+.bar-fill { height: 100%; background: #00d4ff; border-radius: 4px; transition: width 0.03s; }
+.bar-value { width: 60px; text-align: right; font-size: 12px; margin-left: 8px; }
+.controls { margin: 20px 0; }
+button { padding: 10px 20px; margin-right: 10px; background: #00d4ff; border: none; color: #000; font-weight: bold; cursor: pointer; border-radius: 4px; }
+button:hover { background: #00b8d4; }
+.info { color: #aaa; font-size: 14px; margin: 10px 0; }
+#progress { width: 100%; margin: 10px 0; }
+.episode-select { margin: 10px 0; }
+select { padding: 5px; background: #333; color: #eee; border: 1px solid #555; }
+</style>
+</head>
+<body>
+<div class="container">
+<h1>SO-101 Pick&Place — Dataset Replay</h1>
+<div class="info">Dataset: lerobot/svla_so101_pickplace | 50 episodes | 30fps</div>
+<div class="episode-select">
+Episode: <select id="epSelect"></select>
+</div>
+<div class="controls">
+<button onclick="play()">Play</button>
+<button onclick="pause()">Pause</button>
+<button onclick="reset()">Reset</button>
+<span id="frameInfo" style="margin-left:20px;">Frame: 0/0</span>
+</div>
+<input type="range" id="progress" min="0" max="100" value="0" oninput="seek(this.value)">
+<div id="joints"></div>
+</div>
+<script>
+let data = null;
+let allEpisodes = {};
+let frame = 0;
+let playing = false;
+let timer = null;
+const jointNames = ['shoulder_pan', 'shoulder_lift', 'elbow_flex', 'wrist_flex', 'wrist_roll', 'gripper'];
+const jointRanges = [
+  [-100, 100], [-100, 100], [0, 100], [0, 100], [-100, 0], [0, 35]
+];
+
+async function loadAllEpisodes() {
+  const resp = await fetch('all_episodes.json');
+  allEpisodes = await resp.json();
+  const sel = document.getElementById('epSelect');
+  for (let i = 0; i < allEpisodes.total_episodes; i++) {
+    const opt = document.createElement('option');
+    opt.value = i; opt.textContent = 'Episode ' + i + ' (' + allEpisodes.episodes[i].length + ' frames)';
+    sel.appendChild(opt);
+  }
+  sel.onchange = () => { loadEpisode(parseInt(sel.value)); };
+  loadEpisode(0);
+}
+
+function loadEpisode(epIdx) {
+  data = allEpisodes.episodes[epIdx];
+  frame = 0;
+  playing = false;
+  if (timer) clearInterval(timer);
+  updateDisplay();
+}
+
+function updateDisplay() {
+  if (!data) return;
+  const f = data[frame];
+  const jointsDiv = document.getElementById('joints');
+  jointsDiv.innerHTML = '';
+  for (let i = 0; i < jointNames.length; i++) {
+    const val = f.state[i];
+    const [min, max] = jointRanges[i];
+    const pct = Math.max(0, Math.min(100, ((val - min) / (max - min)) * 100));
+    jointsDiv.innerHTML += '<div class="joint-bar">' +
+      '<span class="joint-name">' + jointNames[i] + '</span>' +
+      '<div class="bar-bg"><div class="bar-fill" style="width:' + pct + '%"></div></div>' +
+      '<span class="bar-value">' + val.toFixed(1) + '</span></div>';
+  }
+  document.getElementById('frameInfo').textContent = 'Frame: ' + frame + '/' + data.length;
+  document.getElementById('progress').max = data.length - 1;
+  document.getElementById('progress').value = frame;
+}
+
+function play() {
+  if (playing) return;
+  playing = true;
+  timer = setInterval(() => {
+    if (frame < data.length - 1) { frame++; updateDisplay(); }
+    else { pause(); }
+  }, 1000/30);
+}
+
+function pause() { playing = false; if (timer) clearInterval(timer); }
+function reset() { pause(); frame = 0; updateDisplay(); }
+function seek(v) { frame = parseInt(v); updateDisplay(); }
+
+loadAllEpisodes();
+</script>
+</body>
+</html>
